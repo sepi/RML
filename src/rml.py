@@ -19,30 +19,27 @@ class IOClass:
 myIO=IOClass()
 
 
-
 def main():
-    
     options, args = parseArgs()
-    
+
     myIO.verbose=options.verbose
     myIO.dry=options.dry
-    
-    if(options.file):
+
+    if options.file:
         # they want to read a file
         doc = open(options.file)
     else:
         # we'll listen to stdin
         doc = sys.stdin
 
-
-    if(options.port):
+    if options.port:
         # they want to use a serial port
         try:
             import serial
         except:
             err("serial interface not supported")
             return
-        
+
         try:
             myIO.port=serial.serial_for_url(options.port, baudrate=options.baud)
         except IOError as error:
@@ -53,137 +50,129 @@ def main():
     else:
         err("no port specified. using stdout")
         myIO.port = sys.stdout
-    
+
     parse(doc)
-    
+
     doc.close()
-    
+
     if not myIO.dry:
-        myIO.port.close()    
+        myIO.port.close()
 
 def parse(doc):
-    
     cmdMode=False
     cmd=""
-    
-    while(1):
-    
-        if myIO.port.inWaiting():
-            err(myIO.port.read(myIO.port.inWaiting()).encode('hex'))
-        
+
+    while True:
+        if getattr(myIO.port, 'in_waiting', False):
+            err(myIO.port.read(myIO.port.in_waiting))
+
         #if not doc.inWaiting():
         #    continue;
-            
-        c=doc.read(1) # read 1 char
-        
+        c = doc.read(1) # read 1 char
+
         if c == "": # EOF
             break
-        
-        # usually we want to just send the charachter
+
+        # usually we want to just send the character
         #  unless we are in command mode
         #  or the c is {
-        
+
         if cmdMode:
             if c == '}':
                 cmdMode = False
                 # end of command. time to parse it.
                 handleCmd(cmd.strip());
                 continue
-            
+
             # append to cmd
             cmd=cmd+c
             continue
-        
+
         if c == '{':
             # entering command mode
-            
+
             cmdMode = True
             cmd=""
             continue
-        
+
         # we'll allow characters 0x20 thru 0x7E and 0x0A (LF)
         # all others are ignored.
         # is that what we really want?
-        
+
         #print c
         if (ord(c)>=0x20 and ord(c)<=0x7E) or ord(c)==0x0A:
             # send the char! do eet!
-            
+
             if ord(c)==0x0A:
                 time.sleep(.3)
-            
-            devSend(c)
-            
+
+            devSend(c.encode())
 
 
 def parseArgs():
-
     parser = OptionParser()
-    
+
     parser.add_option("-f", "--file", dest="file", default=False,
                       help="input file (default to stdin)", metavar="FILE")
-                      
+
     parser.add_option("-p", "--port", dest="port", default=False,
                       help="serial device (default to stdout)")
-                      
+
     parser.add_option("-b", "--baud", dest="baud", default="19200",
                       help="baud rate (default to 19200)")
-    
+
     parser.add_option("-v", "--verbose",
                       action="store_true", dest="verbose", default=False,
                       help="display extra info")
-    
+
     parser.add_option("-t", "--test",
                       action="store_true", dest="dry", default=False,
                       help="don't send to serial")
-    
+
 #    parser.add_option("-s", "--status",
 #                      action="store_true", dest="doStatus", default=False,
 #                      help="show device status and exit")
-    
+
     return parser.parse_args()
 
 
-
 def handleCmd(command):
-    
     # most commands map directly to device commands
     # some take arguments
-    
+
     #if command=='{':
     #    devSend('{')
-    
+
     # the first thing is the command. Later things are arguments.
     cmd=command.split()
-    
+
     valid=False
-    
+
     # empty
     if len(cmd)==0:
         return
-    
+
     name=cmd[0].lower()
-    
+
     # commands that are directly mapped
     if name in theCommands:
         sCmd=theCommands[name]
-        
+
         info(sCmd[1])
 
         devSend(sCmd[0])
-        
         valid=True
-    
+
     # things that take one number
     if name in oneArg:
         #info("oneArg!")
-        
+
         if len(cmd)==1:
-            devSend(chr(oneArg[name]))
+            devSend(oneArg[name].to_bytes())
         if len(cmd)==2:
             #info("arg="+str(int(cmd[1])))
-            devSend(chr(int(cmd[1])))
-        
+            devSend(int(cmd[1]).to_bytes())
+
         valid=True
 
     # enlarge. This doesn't work (?)
@@ -194,32 +183,28 @@ def handleCmd(command):
             h=1
         if 'w' in command or 'W' in command:
             w=1
-        
-        devSend(chr(h*0x01 + w*0x10))
-        
-    
+
+        devSend(chr(h*0x01 + w*0x10).encode())
+
+
     # leftSpace has special parsing
     if name == 'leftspace':
         if len(cmd)==1:
-            devSend(chr(0));
+            devSend(int(0).to_bytes());
         if len(cmd)==2:
             devSend(twoBytes(int(cmd[1])));
 
     # barcode - more special
     if name == 'barcode':
         if len(cmd)>2:
-        
             type=0 # type defaults to UPC-A
-            
+
             if cmd[1].upper() in bcTypes:
                 type=bcTypes.index(cmd[1])
-            
+
             cmdSpl=command.split(' ',2)
-            
             dat=cmdSpl[2]
-            
-            
-            
+
             # now we want to format the data depending on the format
             
             # only number chars
@@ -261,7 +246,7 @@ def handleCmd(command):
             info('barcode type='+str(type)+' data='+dat)
         
             # we'll use "format 2" syntax, with explicit length
-            devSend('\x1D\x6B'+chr(type+65)+chr(len(dat))+dat)
+            devSend(b'\x1D\x6B'+(type+65).to_bytes()+len(dat).to_bytes()+dat.encode())
             
             # I think we should wait for the data to print
     
@@ -270,67 +255,62 @@ def handleCmd(command):
         if len(cmd)>1:
             # allows spaces in the file name
             doImage(command.split(' ',1)[1],(name=='imager'))
-            
-            
+
     # for raw hex
     if name[0] == 'x':
         # no other commands can start with x
-        
+
         dat=command.upper();
-        
+
         # remove things that aren't hex digits
         dat="".join([c for c in dat if c in string.hexdigits])
-        
+
         # pad with 0 if necessary
         if len(dat)%2==1:
             dat=dat+'0'
-        
+
         info("raw hex: "+dat)
-        
-        devSend(dat.decode('hex'))
+        devSend(dat)
 
     # so 'style' is weid.
     # the style command has 6 properties
     if name=='style':
         c=[cm.lower() for cm in cmd]
-        
+
         tall='tall' in c or 'big' in c
         wide='big' in c
         inv= 'i' in c
         em = 'em' in c
         strike = 'strike' in c
         ud = 'ud' in c
-        
+
         mode=(inv<<1)+(ud<<2)+(em<<3)+(tall<<4)+(wide<<5)+(strike<<6)
-        
-        devSend('\x1b\x21'+chr(mode))
+
+        devSend(b'\x1b\x21'+mode.to_bytes())
 
     # barcode text location
     if name=='bcloc':
         c=[cm.lower() for cm in cmd]
-        
+
         # numbers are for backward compatibility
         above='above' in c or '1' in c or '3' in c
         below='below' in c or '2' in c or '3' in c
-        
+
         loc=above*1+below*2
-        
-        devSend(chr(loc))
-        
-        
+
+        devSend(loc.to_bytes())
 
     #     'heat':('\x1B\x37'    ,'heat control'),
     #  'density':('\x12\x23'    ,'density control'),
 
     if name=='heat':
         if len(cmd)==4:
-            devSend('\x1B\x37'+chr(int(cmd[1]))+chr(int(cmd[2]))+chr(int(cmd[3])))
+            devSend(b'\x1B\x37'+int(cmd[1]).to_bytes()+int(cmd[2]).to_bytes()+int(cmd[3]).to_bytes())
 
     if name=='density':
         if len(cmd)==3:
-            
-            devSend('\x12\x23'+chr(int(cmd[1])+(int(cmd[2])<<4)))
-    
+            devSend(b'\x12\x23'+int(cmd[1]).to_bytes()+(int(cmd[2])<<4).to_bytes())
+
 
 def doImage(path,rot):
     try:
@@ -338,53 +318,50 @@ def doImage(path,rot):
     except:
         err("please install Python Image Library")
         return
-    
+
     try:
         img = Image.open(path)
     except:
         err("file "+path+" not found!")
         return
-    
 
     # convert to greyscale, invert
     img=ImageOps.invert(img.convert('L'))
-    
+
     if rot:
         img=img.rotate(90)
-        
-        
+
     # figure out the desired W and H
-    
     if img.size[0]<=384:
-        # if the image is less than the max, 
+        # if the image is less than the max,
         # round the width up to a multible of 8
         img=img.crop((0,0,int(ceil(img.size[0]/8.)*8),img.size[1]))
     else:
         # if the image is larger than the max,
         # scale it down to the max
-        img=img.resize((384,img.size[1]*384/img.size[0]))
-    
-    
+        img=img.resize((384,img.size[1]*384//img.size[0]))
+
+
     # if verbose, show the image.
     if myIO.verbose:
         ImageOps.invert(img).convert('1').show()
-    
+
     # stringify
-    imgStr=img.convert('1').tostring()
-    
-    
+    imgStr=img.convert('1').tobytes()
+
+
     info(path+' '+str(img.size))
-    
+
     # (GS v)
-    devSend('\x1D\x76\0\0'+twoBytes(img.size[0]/8)+twoBytes(img.size[1])+imgStr)
-    
+    devSend(b'\x1D\x76\0\0'+twoBytes(img.size[0]//8)+twoBytes(img.size[1])+imgStr)
+
     # I think we should wait for the data to send/print
     time.sleep(6)
 
 # some commands take a number (n) as two bytes (nL nH)
 def twoBytes(num):
     #         low byte     high byte
-    return chr(num%256)+chr(num//256)
+    return (num%256).to_bytes()+(num//256).to_bytes()
 
 # informative messages
 # print to stderr if verbose
@@ -400,50 +377,53 @@ def err(s):
 # send data to printer
 def devSend(s):
     if not myIO.dry: # (wet?)
-        myIO.port.write(s)
+        if myIO.port == sys.stdout:
+            myIO.port.buffer.write(s)
+        else:
+            myIO.port.write(s)
 
 
 # commands that map directly to device commands
 theCommands={
-    'feedl':('\x1B\x64'    ,'feed (lines)'),
-    'feedd':('\x1B\x4A'    ,'feed (dots)'),
-    
-'linespace':('\x1B\x33'    ,'line space'),
-'leftspace':('\x1D\x4C'    ,'left space'),
+    'feedl':(b'\x1B\x64'    ,'feed (lines)'),
+    'feedd':(b'\x1B\x4A'    ,'feed (dots)'),
 
-   'left'  :('\x1B\x61\x00','align left'),
-   'center':('\x1B\x61\x01','align center'),
-   'right' :('\x1B\x61\x02','align right'),
+'linespace':(b'\x1B\x33'    ,'line space'),
+'leftspace':(b'\x1D\x4C'    ,'left space'),
 
-'charspace':('\x1B\x20'    ,'charachter space'),
+   'left'  :(b'\x1B\x61\x00','align left'),
+   'center':(b'\x1B\x61\x01','align center'),
+   'right' :(b'\x1B\x61\x02','align right'),
 
-        'b':('\x1B\x45\x01','bold'),
-       '/b':('\x1B\x45\x00','un-bold'),
+'charspace':(b'\x1B\x20'    ,'charachter space'),
+
+        'b':(b'\x1B\x45\x01','bold'),
+       '/b':(b'\x1B\x45\x00','un-bold'),
 
 # wide is weird. - maybe it's for special double-wide chars.
-     'wide':('\x1B\x0B'    ,'wide'),
-    '/wide':('\x1B\x14'    ,'un-wide'),
-    
-       'ud':('\x1B\x7B\x01','updown'),
-      '/ud':('\x1B\x7B\x00','un-updown'),
-    
-      'inv':('\x1D\x42\x01','invert'),
-     '/inv':('\x1D\x42\x00','un-invert'),
-    
-        'u':('\x1B\x2D'    ,'underline'),
-        
-        'e':('\x1D\x21'    ,'enlarge'),
+     'wide':(b'\x1B\x0B'    ,'wide'),
+    '/wide':(b'\x1B\x14'    ,'un-wide'),
 
-  'charset':('\x1B\x52'    ,'charachter set'),
-'codetable':('\x1B\x74'    ,'code table'),
+       'ud':(b'\x1B\x7B\x01','updown'),
+      '/ud':(b'\x1B\x7B\x00','un-updown'),
 
-    'bcloc':('\x1D\x48'    ,'barcode text location'),
-      'bch':('\x1D\x68'    ,'barcode height'),
-      'bcw':('\x1D\x77'    ,'barcode width'),
-  'bcspace':('\x1D\x78'    ,'barcode left space'),
+      'inv':(b'\x1D\x42\x01','invert'),
+     '/inv':(b'\x1D\x42\x00','un-invert'),
 
-     'init':('\x1B\x40'    ,'initialize'),
- 'testpage':('\x12\x54'    ,'test page'),
+        'u':(b'\x1B\x2D'    ,'underline'),
+
+        'e':(b'\x1D\x21'    ,'enlarge'),
+
+  'charset':(b'\x1B\x52'    ,'charachter set'),
+'codetable':(b'\x1B\x74'    ,'code table'),
+
+    'bcloc':(b'\x1D\x48'    ,'barcode text location'),
+      'bch':(b'\x1D\x68'    ,'barcode height'),
+      'bcw':(b'\x1D\x77'    ,'barcode width'),
+  'bcspace':(b'\x1D\x78'    ,'barcode left space'),
+
+     'init':(b'\x1B\x40'    ,'initialize'),
+ 'testpage':(b'\x12\x54'    ,'test page'),
 }
 
 # commands that take one argument, and the default value
@@ -476,8 +456,8 @@ bcTypes=[
     'MSI'
 ]
 
-CODE39chars=string.digits+string.uppercase+' $%+'
-CODEBARchars=string.digits+string.uppercase+' +'
+CODE39chars=string.digits+string.ascii_uppercase+' $%+'
+CODEBARchars=string.digits+string.ascii_uppercase+' +'
 
 
 # go.
