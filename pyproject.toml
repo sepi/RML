@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "RML"
+version = "0.1.0"
+authors = [
+  { name="Ames Bielenberg", email="amesbielenberg@gmail.com" },
+  { name="Raffael Mancini", email="raffael@mancini.lu" },
+]
+description = "A simple tool for printing to thermal printers."
+readme = "README.txt"
+requires-python = ">=3.8"
+classifiers = []
+dependencies = ["pyserial", "pillow"]
+
+[project.urls]
+Homepage = "https://github.com/sepi/RML"
+
+[project.scripts]
+rml = "rml.rml:main"

@@ -1,5 +1,3 @@
-
-
 import sys
 from math import ceil
 import string
@@ -8,7 +6,6 @@ import time
 # argparse is only for python 2.7
 from optparse import OptionParser
 
-
 # a little class for basically storing global things
 class IOClass:
     def __init__(self):
@@ -16,21 +13,20 @@ class IOClass:
         self.dry = False
         self.port = False
 
-myIO=IOClass()
-
 
 def main():
-    options, args = parseArgs()
+    options, _ = parseArgs()
 
-    myIO.verbose=options.verbose
-    myIO.dry=options.dry
+    io=IOClass()
+    io.verbose=options.verbose
+    io.dry=options.dry
 
     if options.file:
         # they want to read a file
-        doc = open(options.file)
+        input_file = open(options.file)
     else:
         # we'll listen to stdin
-        doc = sys.stdin
+        input_file = sys.stdin
 
     if options.port:
         # they want to use a serial port
@@ -41,34 +37,43 @@ def main():
             return
 
         try:
-            myIO.port=serial.serial_for_url(options.port, baudrate=options.baud)
+            io.port = serial.serial_for_url(options.port, baudrate=options.baud)
         except IOError as error:
             err(str(error))
             err("SERIAL PORT FAIL! falling back to dry mode")
-            myIO.dry=True
+            io.dry = True
 
     else:
         err("no port specified. using stdout")
-        myIO.port = sys.stdout
+        io.port = sys.stdout
 
-    parse(doc)
+    parse(input_file, io)
 
-    doc.close()
+    input_file.close()
 
-    if not myIO.dry:
-        myIO.port.close()
+    if not io.dry:
+        io.port.close()
 
-def parse(doc):
-    cmdMode=False
-    cmd=""
+
+def print_from_file(input_file, serial_device_path):
+    import serial
+    with serial.Serial(serial_device_path) as ser:
+        io = IOClass()
+        io.port = ser
+        parse(input_file, io)
+
+
+def parse(input_file, io=IOClass()):
+    cmdMode = False
+    cmd = ""
 
     while True:
-        if getattr(myIO.port, 'in_waiting', False):
-            err(myIO.port.read(myIO.port.in_waiting))
+        if getattr(io, 'port', False) and getattr(io.port, 'in_waiting', False):
+            err(io.port.read(io.port.in_waiting))
 
-        #if not doc.inWaiting():
+        #if not input_file.inWaiting():
         #    continue;
-        c = doc.read(1) # read 1 char
+        c = input_file.read(1) # read 1 char
 
         if c == "": # EOF
             break
@@ -81,7 +86,7 @@ def parse(doc):
             if c == '}':
                 cmdMode = False
                 # end of command. time to parse it.
-                handleCmd(cmd.strip());
+                handleCmd(io, cmd.strip());
                 continue
 
             # append to cmd
@@ -99,14 +104,12 @@ def parse(doc):
         # all others are ignored.
         # is that what we really want?
 
-        #print c
         if (ord(c)>=0x20 and ord(c)<=0x7E) or ord(c)==0x0A:
             # send the char! do eet!
-
-            if ord(c)==0x0A:
+            if ord(c)==0x0A and io.port != sys.stdout:
                 time.sleep(.3)
 
-            devSend(c.encode())
+            devSend(io, c.encode())
 
 
 def parseArgs():
@@ -136,12 +139,12 @@ def parseArgs():
     return parser.parse_args()
 
 
-def handleCmd(command):
+def handleCmd(io, command):
     # most commands map directly to device commands
     # some take arguments
 
     #if command=='{':
-    #    devSend('{')
+    #    devSend(io, '{')
 
     # the first thing is the command. Later things are arguments.
     cmd=command.split()
@@ -158,20 +161,20 @@ def handleCmd(command):
     if name in theCommands:
         sCmd=theCommands[name]
 
-        info(sCmd[1])
+        info(io, sCmd[1])
 
-        devSend(sCmd[0])
+        devSend(io, sCmd[0])
         valid=True
 
     # things that take one number
     if name in oneArg:
-        #info("oneArg!")
+        #info(io, "oneArg!")
 
         if len(cmd)==1:
-            devSend(oneArg[name].to_bytes())
+            devSend(io, oneArg[name].to_bytes())
         if len(cmd)==2:
-            #info("arg="+str(int(cmd[1])))
-            devSend(int(cmd[1]).to_bytes())
+            #info(io, "arg="+str(int(cmd[1])))
+            devSend(io, int(cmd[1]).to_bytes())
 
         valid=True
 
@@ -184,15 +187,15 @@ def handleCmd(command):
         if 'w' in command or 'W' in command:
             w=1
 
-        devSend(chr(h*0x01 + w*0x10).encode())
+        devSend(io, chr(h*0x01 + w*0x10).encode())
 
 
     # leftSpace has special parsing
     if name == 'leftspace':
         if len(cmd)==1:
-            devSend(int(0).to_bytes());
+            devSend(io, int(0).to_bytes());
         if len(cmd)==2:
-            devSend(twoBytes(int(cmd[1])));
+            devSend(io, twoBytes(int(cmd[1])));
 
     # barcode - more special
     if name == 'barcode':
@@ -228,25 +231,20 @@ def handleCmd(command):
             
             # CODE128 - any char - use hex?
             if type == 8:
-                
                 # we want to allow for arbitary data, probably using hex,
                 # but that's annoying if you just want to normals ascii text.
                 # perhaps we should have an escape char for hex.
                 # the questions becomes - which charachter?
-                
-                
-            
                 pass
             
             # code93 and code128 take binary data in range 0-127.
             # we should probably use hex input for this.
             
             # some things allow spaces: we should allow that too.
-            
-            info('barcode type='+str(type)+' data='+dat)
+            info(io, 'barcode type='+str(type)+' data='+dat)
         
             # we'll use "format 2" syntax, with explicit length
-            devSend(b'\x1D\x6B'+(type+65).to_bytes()+len(dat).to_bytes()+dat.encode())
+            devSend(io, b'\x1D\x6B'+(type+65).to_bytes()+len(dat).to_bytes()+dat.encode())
             
             # I think we should wait for the data to print
     
@@ -254,7 +252,7 @@ def handleCmd(command):
     if name == 'image' or name == 'imager':
         if len(cmd)>1:
             # allows spaces in the file name
-            doImage(command.split(' ',1)[1],(name=='imager'))
+            doImage(io, command.split(' ',1)[1],(name=='imager'))
 
     # for raw hex
     if name[0] == 'x':
@@ -269,8 +267,8 @@ def handleCmd(command):
         if len(dat)%2==1:
             dat=dat+'0'
 
-        info("raw hex: "+dat)
-        devSend(dat)
+        info(io, "raw hex: "+dat)
+        devSend(io, dat)
 
     # so 'style' is weid.
     # the style command has 6 properties
@@ -286,7 +284,7 @@ def handleCmd(command):
 
         mode=(inv<<1)+(ud<<2)+(em<<3)+(tall<<4)+(wide<<5)+(strike<<6)
 
-        devSend(b'\x1b\x21'+mode.to_bytes())
+        devSend(io, b'\x1b\x21'+mode.to_bytes())
 
     # barcode text location
     if name=='bcloc':
@@ -298,21 +296,21 @@ def handleCmd(command):
 
         loc=above*1+below*2
 
-        devSend(loc.to_bytes())
+        devSend(io, loc.to_bytes())
 
     #     'heat':('\x1B\x37'    ,'heat control'),
     #  'density':('\x12\x23'    ,'density control'),
 
     if name=='heat':
         if len(cmd)==4:
-            devSend(b'\x1B\x37'+int(cmd[1]).to_bytes()+int(cmd[2]).to_bytes()+int(cmd[3]).to_bytes())
+            devSend(io, b'\x1B\x37'+int(cmd[1]).to_bytes()+int(cmd[2]).to_bytes()+int(cmd[3]).to_bytes())
 
     if name=='density':
         if len(cmd)==3:
-            devSend(b'\x12\x23'+int(cmd[1]).to_bytes()+(int(cmd[2])<<4).to_bytes())
+            devSend(io, b'\x12\x23'+int(cmd[1]).to_bytes()+(int(cmd[2])<<4).to_bytes())
 
 
-def doImage(path,rot):
+def doImage(io, path,rot):
     try:
         from PIL import Image, ImageOps
     except:
@@ -343,20 +341,20 @@ def doImage(path,rot):
 
 
     # if verbose, show the image.
-    if myIO.verbose:
+    if io.verbose:
         ImageOps.invert(img).convert('1').show()
 
     # stringify
     imgStr=img.convert('1').tobytes()
 
-
-    info(path+' '+str(img.size))
+    info(io, path+' '+str(img.size))
 
     # (GS v)
-    devSend(b'\x1D\x76\0\0'+twoBytes(img.size[0]//8)+twoBytes(img.size[1])+imgStr)
+    devSend(io, b'\x1D\x76\0\0'+twoBytes(img.size[0]//8)+twoBytes(img.size[1])+imgStr)
 
     # I think we should wait for the data to send/print
-    time.sleep(6)
+    if io.port != sys.stdout:
+        time.sleep(6)
 
 # some commands take a number (n) as two bytes (nL nH)
 def twoBytes(num):
@@ -365,22 +363,22 @@ def twoBytes(num):
 
 # informative messages
 # print to stderr if verbose
-def info(s):
-    if myIO.verbose:
-        sys.stderr.write(s+'\r\n')
+def info(io, s):
+    if io.verbose:
+        print("INFO: " + s, file=sys.stderr)
 
 # important messages
 # print to stderr
 def err(s):
-    sys.stderr.write(s+'\r\n')
+    print("ERROR: " + s, file=sys.stderr)
 
 # send data to printer
-def devSend(s):
-    if not myIO.dry: # (wet?)
-        if myIO.port == sys.stdout:
-            myIO.port.buffer.write(s)
+def devSend(io, s):
+    if not io.dry: # (wet?)
+        if io.port == sys.stdout:
+            io.port.buffer.write(s)
         else:
-            myIO.port.write(s)
+            io.port.write(s)
 
 
 # commands that map directly to device commands
@@ -460,5 +458,5 @@ CODE39chars=string.digits+string.ascii_uppercase+' $%+'
 CODEBARchars=string.digits+string.ascii_uppercase+' +'
 
 
-# go.
-main()
+if __name__ == '__main__':
+    main()
