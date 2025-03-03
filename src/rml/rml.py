@@ -57,10 +57,21 @@ def main():
 
 def print_from_file(input_file, serial_device_path):
     import serial
-    with serial.Serial(serial_device_path) as ser:
-        io = IOClass()
-        io.port = ser
-        parse(input_file, io)
+    import io
+    my_io = IOClass()
+    if isinstance(serial_device_path, io.IOBase):
+        my_io.port = serial_device_path
+        parse(input_file, my_io)
+    else:
+        with serial.Serial(serial_device_path) as ser:
+            my_io.port = ser
+            parse(input_file, my_io)
+
+
+def print_from_str(s, serial_device_path):
+    import io
+    sio = io.StringIO(s)
+    print_from_file(sio, serial_device_path)
 
 
 def parse(input_file, io=IOClass()):
