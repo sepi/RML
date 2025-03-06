@@ -63,7 +63,7 @@ def print_from_file(input_file, serial_device_path):
         my_io.port = serial_device_path
         parse(input_file, my_io)
     else:
-        with serial.Serial(serial_device_path) as ser:
+        with serial.serial_for_url(serial_device_path, baudrate=19200) as ser:
             my_io.port = ser
             parse(input_file, my_io)
 
