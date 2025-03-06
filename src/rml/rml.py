@@ -69,9 +69,7 @@ def print_from_file(input_file, serial_device_path):
 
 
 def print_from_str(s, serial_device_path):
-    import io
-    sio = io.StringIO(s)
-    print_from_file(sio, serial_device_path)
+    print_from_bytes(s.encode('CP437'), serial_device_path)
 
 
 def print_from_bytes(b, serial_device_path):
