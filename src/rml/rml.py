@@ -74,19 +74,25 @@ def print_from_str(s, serial_device_path):
     print_from_file(sio, serial_device_path)
 
 
+def print_from_bytes(b, serial_device_path):
+    import io
+    bio = io.BytesIO(b)
+    print_from_file(bio, serial_device_path)
+
+
 def parse(input_file, io=IOClass()):
     cmdMode = False
-    cmd = ""
+    cmd = b""
 
     while True:
         if getattr(io, 'port', False) and getattr(io.port, 'in_waiting', False):
-            err(io.port.read(io.port.in_waiting))
+            err(io.port.read(io.port.in_waiting)) ## FIXME
 
         #if not input_file.inWaiting():
         #    continue;
         c = input_file.read(1) # read 1 char
 
-        if c == "": # EOF
+        if c == b"": # EOF
             break
 
         # usually we want to just send the character
@@ -94,7 +100,7 @@ def parse(input_file, io=IOClass()):
         #  or the c is {
 
         if cmdMode:
-            if c == '}':
+            if c == b'}':
                 cmdMode = False
                 # end of command. time to parse it.
                 handleCmd(io, cmd.strip());
@@ -104,11 +110,11 @@ def parse(input_file, io=IOClass()):
             cmd=cmd+c
             continue
 
-        if c == '{':
+        if c == b'{':
             # entering command mode
 
             cmdMode = True
-            cmd=""
+            cmd=b""
             continue
 
         # we'll allow characters 0x20 thru 0x7E and 0x0A (LF)
@@ -120,7 +126,7 @@ def parse(input_file, io=IOClass()):
             if ord(c)==0x0A and io.port != sys.stdout:
                 time.sleep(.3)
 
-            devSend(io, c.encode())
+            devSend(io, c)
 
 
 def parseArgs():
@@ -206,7 +212,7 @@ def handleCmd(io, command):
         if len(cmd)==1:
             devSend(io, int(0).to_bytes());
         if len(cmd)==2:
-            devSend(io, twoBytes(int(cmd[1])));
+            devSend(io, twoBytes(cmd[1]));
 
     # barcode - more special
     if name == 'barcode':
