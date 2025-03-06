@@ -119,9 +119,10 @@ def parse(input_file, io=IOClass()):
         # all others are ignored.
         # is that what we really want?
 
-        if (ord(c)>=0x20 and ord(c)<=0x7E) or ord(c)==0x0A:
-            # send the char! do eet!
-            if ord(c)==0x0A and io.port != sys.stdout:
+        if c >= b'\x20' or c == b'\x0A':
+            # Linefeed. Not clear why waiting strictly necessary. Is
+            # output not buffered?
+            if c == b'\x0A' and io.port != sys.stdout:
                 time.sleep(.3)
 
             devSend(io, c)
