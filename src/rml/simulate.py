@@ -172,8 +172,11 @@ def simulate_print(input_file, max_line_length=32, output_file=sys.stdout):
                 except KeyError:
                     print(f"Unknown GS command {b2}")
             case _:
-                print_state.line += b1.decode()
-                print_state.line_length += 1
+                try:
+                    print_state.line += b1.decode()
+                    print_state.line_length += 1
+                except UnicodeDecodeError as e:
+                    print("Could not decode a char: ", e)
 
         if (print_state.line_length == max_line_length):
             flush(print_state, print_settings)
