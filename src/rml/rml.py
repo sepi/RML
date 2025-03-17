@@ -163,8 +163,7 @@ def handleCmd(io, command):
     #    devSend(io, '{')
 
     # the first thing is the command. Later things are arguments.
-    cmd=command.split()
-
+    cmd=command.decode().split(" ")
     valid=False
 
     # empty
@@ -374,7 +373,7 @@ def doImage(io, path,rot):
 
 # some commands take a number (n) as two bytes (nL nH)
 def twoBytes(num):
-    #         low byte     high byte
+    #           low byte              high byte
     return (num%256).to_bytes()+(num//256).to_bytes()
 
 # informative messages
