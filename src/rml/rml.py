@@ -84,7 +84,7 @@ def parse(input_file, io=IOClass()):
 
     while True:
         if getattr(io, 'port', False) and getattr(io.port, 'in_waiting', False):
-            err(io.port.read(io.port.in_waiting)) ## FIXME
+            time.sleep(0.1)
 
         #if not input_file.inWaiting():
         #    continue;
@@ -265,9 +265,9 @@ def handleCmd(io, command):
     
     
     if name == 'image' or name == 'imager':
-        if len(cmd)>1:
+        if len(cmd) > 1:
             # allows spaces in the file name
-            doImage(io, command.decode().split(' ', 1)[1],(name=='imager'))
+            doImage(io, command.decode().split(' ', 1)[1], (name=='imager'))
 
     # for raw hex
     if name[0] == 'x':
@@ -325,7 +325,7 @@ def handleCmd(io, command):
             devSend(io, b'\x12\x23'+int(cmd[1]).to_bytes()+(int(cmd[2])<<4).to_bytes())
 
 
-def doImage(io, path,rot):
+def doImage(io, path, rot):
     try:
         from PIL import Image, ImageOps
     except:
