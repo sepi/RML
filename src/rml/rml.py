@@ -267,7 +267,7 @@ def handleCmd(io, command):
     if name == 'image' or name == 'imager':
         if len(cmd)>1:
             # allows spaces in the file name
-            doImage(io, command.split(' ',1)[1],(name=='imager'))
+            doImage(io, command.decode().split(' ', 1)[1],(name=='imager'))
 
     # for raw hex
     if name[0] == 'x':
